@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en" >
+  <head>
+    <meta charset="utf-8">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.15.0/lodash.js"></script>
+    <script src="https://github.com/ripple/ripple-lib/releases/download/0.19.0/ripple-0.19.0-min.js"></script>
+    <script>
+      //function validateForm(){return true;}
+      function processResult(txnResult) {
+          prettyResult="";
+          switch (txnResult) {
+              case "tesSUCCESS":
+                  prettyResult="Success";
+              break;
+              case "tecINSUFFICIENT_RESERVE":
+                  prettyResult="Fail ("+txnResult+") This happens when sender has less than 20XRP in account. For Escrow creation, the minimum reserved amount increases by number of created escrows.";
+              break;
+              case "tecNO_TARGET":
+                  prettyResult="Fail ("+txnResult+") This happens when destination address does not exist.";
+              break;
+              case "tecNO_PERMISSION":
+                  prettyResult="Fail ("+txnResult+") Permission denied (for example can't execute or cancel escrow when the time is reached or contract belongs to other owner";
+              break;
+              default:
+                  prettyResult="Fail ("+txnResult+")";
+              break;
+          }
+          return prettyResult;
+          }
+      function paymentDetails(transaction){
+        chunk = "Source: "+transaction.specification.source.address+br;
+        chunk += "Destination: "+transaction.specification.destination.address+br;
+        chunk += "Date/Time: "+transaction.outcome.timestamp+br;
+        chunk += "Amount: "+transaction.outcome.deliveredAmount.value+"&nbsp"+transaction.outcome.deliveredAmount.currency+br;
+        return chunk;
+      }
+      function escExecDetails(transaction){
+        chunk = br + "Escrow Sequence Nr: "+transaction.specification.escrowSequence+br;
+        chunk += "Executed by: "+transaction.address+br;
+        chunk += "Destination: "+transaction.specification.destination+br;
+        chunk += "Execution Time: "+transaction.outcome.timestamp+br;
+        return chunk;
+      }
+      function escCreateDetails(transaction){
+        chunk = br + "Escrow Sequence Nr: "+transaction.sequence+br;
+        chunk += "Created by: "+transaction.address+br;
+        chunk += "Destination: "+transaction.specification.destination+br;
+        chunk += "Creation Time: "+transaction.outcome.timestamp+br;
+        chunk += "Executable After: "+transaction.specification.allowExecuteAfter+br;
+        chunk += "Amount: "+transaction.specification.amount+" XRP"+br;
+        return chunk;
+      }
+      function escCancelDetails(transaction){
+        chunk = br + "Escrow Sequence Nr: "+transaction.specification.escrowSequence+br;
+        chunk += "Cancelled by: "+transaction.address+br;
+        chunk += "Cancellation Time: "+transaction.outcome.timestamp+br;
+        chunk += "Cancellation Time: "+transaction.outcome.timestamp+br;
+        return chunk;
+      }
+      function getAccountSummary(){
+      document.getElementById('txn_list').innerHTML = "";
+      document.getElementById('txn_detail').innerHTML = "";
+      const myAddress = accountForm.account.value;
+      br="<br>";
+      document.getElementById('account_balance').innerHTML = "<span>Address: </span><span id='myAddress'>"+myAddress+"</span>";
+      var api = new ripple.RippleAPI({server:'wss://s2.ripple.com/'});
+      if (accountForm.submited == "Get Summary") {
+      api.connect().then(function() {
+      return api.getAccountInfo(myAddress);
+      }).then(function(info) {
+          document.getElementById('account_balance').innerHTML += "<p>Balance: "+info.xrpBalance+"</p>";
+          document.getElementById('last_transaction').innerHTML = "<span>Transaction ID: </span><span id='txnId'>"+
+          "<input value='"+info.previousAffectingTransactionID+
+          "' title='Check XRP Transaction ID Format!' size='80' type='text' name='txtTxnID' id='txtTxnID' maxlength='64' autofocus pattern='[A-Z0-9]{64}' required>"+
+          "</input></span><span><button id='btnTxnDetails' onclick='getTxnDetails(document.getElementById(\"txtTxnID\").value,\"txn_detail\");'>Click for details</button></span>";
+          })
+          .catch(function(err){
+          document.getElementById('account_balance').innerHTML += "<p>Error occured. Is the account activated?"+br+err+"</p>";
+          });
+        } else {
+          api.connect().then(function() {
+      		return api.getTransactions(myAddress,{"limit":50});
+          }).then(function(transaction) {
+            document.getElementById('txn_list').innerHTML = ""
+            for (i = 0; i < transaction.length; i++) {
+            document.getElementById('txn_list').innerHTML += "<p>Type: "+transaction[i].type+br+
+            "ID: <input type='text' id='txn_"+i+"' value='"+transaction[i].id+"' disabled size='80'></input>"+br+
+            "Date/Time:"+transaction[i].outcome.timestamp+br+"Status: "+transaction[i].outcome.result+"<button id='btnTxnDetails"+i+
+            "' onclick='getTxnDetails(document.getElementById(\"txn_"+i+"\").value,\"txn_detail_"+i+"\");'>Info</button></p><div id='txn_detail_"+i+"'></div><hr>";
+          }
+          })
+          .catch(function(err){
+          document.getElementById('txn_list').innerHTML += "<p>Error occured. Is that account activated?"+br+err+"</p>";
+          });
+        }
+          return false;
+        }
+
+      function getTxnDetails(myTxnId,destId){
+          //document.getElementById(destId).innerHTML = ""
+          var api = new ripple.RippleAPI({server:'wss://s1.ripple.com/'});
+          api.connect().then(function() {
+      return api.getTransaction(myTxnId);
+      }).then(function(transaction) {
+          const myAddress=document.getElementById("myAddress").innerHTML;
+          innerHtml = "<p>Type: "+transaction.type+"&nbsp";
+          switch(transaction.type) {
+              case "payment":
+                  if (transaction.specification.destination.address == myAddress) {
+                      innerHtml += "received"+br;
+                  } else {
+                      innerHtml += "sent"+br;
+                  }
+                  innerHtml += paymentDetails(transaction)+br;
+                  break;
+              case "escrowExecution":
+                  innerHtml += escExecDetails(transaction)
+                  break;
+              case "escrowCancellation":
+                  innerHtml += escCancelDetails(transaction)
+              break;
+              case "escrowCreation":
+                  innerHtml += escCreateDetails(transaction)
+              break;
+              default:
+                  //alert("Different Type:",transaction.type)
+                  break;
+          }
+                  innerHtml += "fee: "+transaction.outcome.fee+" XRP"+br;
+                  result = processResult(transaction.outcome.result);
+                  innerHtml += "Result: "+result+br;
+                  document.getElementById(destId).innerHTML = innerHtml+"</p>";
+                  })
+                  .catch(function(err){
+                  document.getElementById(destId).innerHTML = "<pre>Error occured:"+err+br+"It could happen if: <ul>\
+                  <li>Transaction type is not supported in this script. Currently only supports payments and escrows.</li>\
+                  <li>The server doesn't have full info. Try using s2 instead of s1</li></pre>";
+                  });
+
+          return false;
+          }
+    </script>
+    <style type="text/css">
+      div.container {
+      width: 100%;
+      border: 1px #0a93eb;
+      }
+      header, footer {
+      padding: 5px;
+      color: white;
+      background-color: #0a93eb;
+      clear: left;
+      text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>XRP Account Check</h1>
+      <pre>by : <a href="https://twitter.com/payam_prz" target="_blank">XRPADA</a>, <a href="https://github.com/payam54/XRP-Escrow-Client" target="_blank">github</a> - tips: r4UDXF4nL7Tgss8uQxn39cCocd8GnGyXS8</pre>
+    </header>
+    <form name="accountForm" onsubmit="return getAccountSummary();" style="padding:5px">
+      Enter XRP Address: <input title="Check XRP Arddress Format!" size="35" type="text" name="account" id="account" maxlength="35" autofocus pattern="^r(?:(?![IOl])[a-zA-Z1-9]){24,34}$" required/>
+      <input type="submit" onclick="this.form.submited=this.value;" value="Get Summary"/>
+      <input type="submit" onclick="this.form.submited=this.value;" value="Last 50 txn" />
+    </form>
+    <div name="account_balance" id="account_balance"></div>
+    <div name="last_transaction" id="last_transaction"></div>
+    <div name="txn_detail" id="txn_detail"></div>
+    <div name="txn_list" id="txn_list"></div>
+  </body>
+</html>

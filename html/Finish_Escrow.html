@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en" >
+   <head>
+      <meta charset="utf-8">
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.15.0/lodash.js"></script>
+      <script src="https://github.com/ripple/ripple-lib/releases/download/0.19.0/ripple-0.19.0-min.js"></script>
+      <script>
+         br = "<br/>";
+         var inner = "";
+         //function validateForm(){return true;}
+         function executeEscrow(tid){
+           destId = "Execute_"+tid;
+           var inner = "";
+           const addr = releaseForm.account.value;
+           const sec = releaseForm.AcctSecret.value;
+           var api = new ripple.RippleAPI({server:'wss://s2.ripple.com/'});
+           if (sec.length<2) {
+             document.getElementById("Execute_"+tid).innerHTML = "<span style='color:red'>Invalid Secret Key!</span>";
+           } else {
+             seqId = document.getElementById("escSeqId_"+tid).innerHTML;
+             var escrowObj = {
+             owner: addr,
+             escrowSequence: parseInt(seqId,10)
+             }
+             function submitTransaction(lastClosedLedgerVersion, prepared, secret) {
+               const signedData = api.sign(prepared.txJSON, secret)
+               inner +='Transaction ID: '+ signedData.id + br;
+               return api.submit(signedData.signedTransaction).then(function(data) {
+                 inner +='Tentative Result: '+ data.resultCode + br;
+                 inner +='Tentative Message: '+ data.resultMessage + br;
+                 inner += "<p><Strong>Final Result:</strong>"
+                 switch(data.resultCode){
+                   case "tecNO_TARGET":
+                     inner += "<font color='red'>It looks like the Escrow has been already executed<font>"
+                   break;
+                   case "tesSUCCESS":
+                     inner += "<font color='green'>Escrow successfully released!</font>"
+                   break;
+                   case "tecNO_PERMISSION":
+                     inner += "<font color='red'>You have no permission to do it. Possible reasons are:<ui>"+
+                     "<li>The escrow period is not over yet. Check you computer's date and time</li><li>Escrow has some additional conditions that were not met or submitted</li>"+
+                     "<li>Escrow is only Cancel-able, so you have to cancel instead of execute</li><font>"
+                   default:
+                     inner += "<font color='Orange'>Execution was not successful</font>"
+                   break;
+                 }
+                 document.getElementById("Execute_"+tid).innerHTML = inner+"</p>";
+               })
+             }
+             api.connect().then(function () {
+              document.getElementById("Execute_"+tid).innerHTML = "Connected"+ br;
+              return api.prepareEscrowExecution(addr, escrowObj);
+             }).then(function (prepared) {
+              document.getElementById("Execute_"+tid).innerHTML += "EscrowCancellation Prepared"+ br;
+              return api.getLedger().then(function (ledger) {
+               document.getElementById("Execute_"+tid).innerHTML += "Current Ledger" + ledger.ledgerVersion+br;
+               return submitTransaction(ledger.ledgerVersion, prepared, sec)
+              })
+              })
+              .catch (function (err) {
+                customErr = ""
+               //if (err.message.includes("xx",0)) {
+               //  customErr = "xxxx";
+              //}
+               document.getElementById('Execute_"+tid').innerHTML += br + "<span style='color:red'>Error occured:</span>" + br +
+               "err:" +err+br +customErr;
+             });
+           }
+               return false;
+         }
+
+         function getEscrowDetails(myTxnId,destId,tid){
+           //document.getElementById(destId).innerHTML = ""
+           var now = new Date();
+           var api = new ripple.RippleAPI({server:'wss://s1.ripple.com/'});
+           api.connect().then(function() {
+           return api.getTransaction(myTxnId);
+           }).then(function(transaction) {
+              inner = "Escrow Sequence Nr: <span id='escSeqId_"+tid+"'>"+transaction.sequence+"</span>"+br +
+             "Destination: "+transaction.specification.destination+br +
+             "Executable After: "+transaction.specification.allowExecuteAfter+br +
+             "Amount: "+transaction.specification.amount+" XRP"+br;
+             var escTime = new Date(transaction.specification.allowExecuteAfter);
+             canExecute = (escTime<now ? "<font color='green'>Can be executed (or was executed before)</font>" : "<font color='red'>Still in Escrow till meets the execute date/time</font>" );
+             document.getElementById(destId).innerHTML = inner+canExecute;
+             if (escTime<now) {
+             document.getElementById(destId).innerHTML += "<button style='color:red' onclick='executeEscrow(\""+tid+"\");'>Execute</button></p><div id='Execute_"+tid+"'></div>";
+           }
+           })
+           .catch(function(err){
+             document.getElementById(destId).innerHTML = "<pre>Error occured:"+err+br+"It could also happen if the server doesn't have full info. Try using s2 instead of s1</pre>";
+           });
+         return false;
+         }
+
+         function getEscrows() {
+         const myAddress = releaseForm.account.value;
+         var api = new ripple.RippleAPI({server:'wss://s2.ripple.com/'});
+         var canExecute="";
+         api.connect().then(function() {
+         return api.getTransactions(myAddress,{"types":["escrowCreation"]});
+         }).then(function(transaction) {
+
+           for (i = 0; i < transaction.length; i++) {
+             if (transaction[i].outcome.result == "tesSUCCESS"){
+
+               document.getElementById('unfinished').innerHTML += "<p>ID: <input type='text' id='txn_"+i+"' value='"+transaction[i].id+"' disabled size='80'></input>"+br+
+              "Created Excrow on:"+transaction[i].outcome.timestamp+br+"<button id='btnTxnDetails"+i+
+              "' onclick='getEscrowDetails(document.getElementById(\"txn_"+i+"\").value,\"txn_detail_"+i+"\","+i+");'>Info</button></p><div id='txn_detail_"+i+"'></div><hr>";
+         }
+         }
+         })
+         .catch(function(err){
+         document.getElementById('unfinished').innerHTML += "<p>Error occured. Is that account activated?"+br+err+"</p>";
+         });
+
+           return false;
+         }
+      </script>
+      <style type="text/css">
+         div.container {
+         width: 100%;
+         border: 1px #0a93eb;
+         }
+         header, footer {
+         padding: 5px;
+         color: white;
+         background-color: #0a93eb;
+         clear: left;
+         text-align: center;
+         }
+         td {
+         float: left;
+         }
+      </style>
+   </head>
+   <body>
+      <header>
+         <h1>XRP Escrow Executor (Release)</h1>
+         <pre>by : <a href="https://twitter.com/payam_prz" target="_blank">XRPADA</a>, <a href="https://github.com/payam54/XRP-Escrow-Client" target="_blank">github</a> - tips: r4UDXF4nL7Tgss8uQxn39cCocd8GnGyXS8</pre>
+         <pre style="text-align:left; color:yellow;">- This is a standalone and secure client-side tool to <strong>Execute/Release</strong> time-based XRP escrows.<br>- It's recommended to use this in a private tab. Also, run it on a fully trusted personal computer</pre>
+      </header>
+      <form name="releaseForm" onsubmit="return getEscrows();" method="post" style="padding:5px">
+         From Address*: <input title="Check XRP Arddress Format!" type="text" name="account" id="account" maxlength="35" size="40" autofocus pattern="^r(?:(?![IOl])[a-zA-Z1-9]){24,34}$" required />
+         <input type="submit" onclick="this.form.submited=this.value;" value="Show Created Escrows" />
+         <br><br>
+         Secret Key*: <input title="Check XRP Arddress Format!" type="password" size="40" autocomplete="off" readonly onfocus="this.removeAttribute('readonly');" name="AcctSecret" id="AcctSecret" maxlength="35" autofocus pattern="^s[a-zA-Z0-9]{24,34}$" required />
+         <pre style="color:red;">Only input secret key when there are executable escrows and you want to fisnish them</pre>
+         <br>
+      </form>
+      <hr>
+      <div id='unfinished'></div>
+   </body>
+</html>

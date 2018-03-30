@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en" >
+  <head>
+    <meta charset="utf-8">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.15.0/lodash.js"></script>
+    <script src="https://github.com/ripple/ripple-lib/releases/download/0.19.0/ripple-0.19.0-min.js"></script>
+    <script>
+      br = "<br/>";
+      //function validateForm(){return true;}
+
+      function createEscrow(){
+      const fromAcct = escrowForm.fromAcct.value;
+      const AcctSecret = escrowForm.AcctSecret.value;
+      var toAcct = escrowForm.toAcct.value.toString();
+      var tag = parseInt(escrowForm.tag.value,10);
+      var amount = escrowForm.amount.value;
+
+      var escrowObj;
+      if (document.getElementById('sameAddr').checked) {
+          toAcct = fromAcct;
+          tag = 0;
+          }
+
+      debugResult = ">From Account: "+fromAcct+br+"To Account: "+ toAcct+br+"Tag: "+tag+br+"Amount: "+ amount+br;
+
+
+      const execTimeDate = calcExecDate();
+      if (tag > 0) {
+      confirmTag="\nTag: "+tag.toString();
+      escrowObj = {
+      "destination": toAcct,
+      "destinationTag": tag,
+      "amount": amount,
+      "allowExecuteAfter": execTimeDate
+      }
+      } else if (tag == 0 || tag == null){
+      confirmTag="";
+      escrowObj = {
+      "destination": toAcct,
+      "destinationTag": 0,
+      "amount": amount,
+      "allowExecuteAfter": execTimeDate
+      }
+      } else {
+      confirmTag="\nTag: INVALID";
+      alert("tag is not a valid number:" +tag);
+      }
+      const objEscrow = escrowObj;
+      if (confirm("You are about to submit an Escrow.Please confirm:\nAmount: "+amount+" XRP\nFrom: "+fromAcct+"\nTo: "+toAcct+confirmTag+"\nFinish Date: "+execTimeDate)) {
+      document.getElementById('escrowDebug').innerHTML = debugResult;
+      document.getElementById('escrowCreate').innerHTML="";
+      document.getElementById('Finalresults').innerHTML = "";
+      var api = new ripple.RippleAPI({server:'wss://s2.ripple.com/'});
+      function submitTransaction(lastClosedLedgerVersion, prepared, secret) {
+        const signedData = api.sign(prepared.txJSON, secret)
+        document.getElementById('escrowCreate').innerHTML +='Transaction ID: '+ signedData.id + br;
+        return api.submit(signedData.signedTransaction).then(function(data) {
+          document.getElementById('escrowCreate').innerHTML +='Tentative Result: '+ data.resultCode + br;
+          document.getElementById('escrowCreate').innerHTML +='Tentative Message: '+ data.resultMessage + br;
+          document.getElementById('Finalresults').innerHTML += "<strong>Copy/Paste this information and save them!</strong></br>Steps to Execute/Finish/Release your escrow:"+
+          "<ol><li>Wait for execution time to pass:"+execTimeDate+"</li><li>Open XRP Escrow Execute/Release tools and get list of created escrows for:"+fromAcct+"</li>"+
+          "<li>Find the transaction that contains this ID:"+signedData.id+"</li><li>Click on 'info' button to see its status</li><li>Click on 'Execute' button to finish the escrow!</li>"+
+          "Keep above information in somewhere safe. However, loosing them (except the secret key) is not end of the world. You can always find the escrow transaction using any XRP tracker such as <a href='https://ripple.com/build/ripple-info-tool/' target='_blank'>RPC Tool</a>.";
+        })
+      }
+      api.connect().then(function () {
+       document.getElementById('escrowCreate').innerHTML += "Connected"+ br;
+       return api.prepareEscrowCreation(fromAcct, objEscrow);
+      }).then(function (prepared) {
+       document.getElementById('escrowCreate').innerHTML += "EscrowCreation Prepared"+ br;
+       return api.getLedger().then(function (ledger) {
+        document.getElementById('escrowCreate').innerHTML += "Current Ledger" + ledger.ledgerVersion+br;
+        return submitTransaction(ledger.ledgerVersion, prepared, AcctSecret)
+       })
+       })
+       .catch (function (err) {
+         customErr = ""
+        if (err.message.includes("amount",0)) {
+          customErr = "Looks like the Amount is too big, too small or not a valid type!";
+        }
+        document.getElementById('escrowCreate').innerHTML += br + "Error occured:" + br +
+        "err:" +err+br +customErr;
+      });
+    }
+          return false;
+        }
+    </script>
+    <style type="text/css">
+      div.container {
+      width: 100%;
+      border: 1px #0a93eb;
+      }
+      header, footer {
+      padding: 5px;
+      color: white;
+      background-color: #0a93eb;
+      clear: left;
+      text-align: center;
+      }
+      td {
+      float: left;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>XRP Escrow Creator</h1>
+      <pre>by : <a href="https://twitter.com/payam_prz" target="_blank">XRPADA</a>, <a href="https://github.com/payam54/XRP-Escrow-Client" target="_blank">github</a> - tips: r4UDXF4nL7Tgss8uQxn39cCocd8GnGyXS8</pre>
+      <pre style="text-align:left; color:yellow;">- This is a standalone and secure client-side tool to <strong>create</strong> time-based XRP escrows.<br>- It's recommended to use this in a private tab. Also, run it on a fully trusted personal computer</pre>
+    </header>
+    <form name="escrowForm" onsubmit="return createEscrow();" method="post" style="padding:5px">
+      <div>
+        From Address*: <input title="Check XRP Arddress Format!" type="text" name="fromAcct" id="fromAcct" maxlength="35" size="40" autofocus pattern="^r(?:(?![IOl])[a-zA-Z1-9]){24,34}$" required />
+        <br><br>
+        Secret Key*: <input title="Check XRP Arddress Format!" type="password" size="40" autocomplete="off" readonly onfocus="this.removeAttribute('readonly');" name="AcctSecret" id="AcctSecret" maxlength="35" autofocus pattern="^s[a-zA-Z0-9]{24,34}$" required />
+        <br><br>
+        <hr>
+      </div>
+      <div>
+        <input onchange="document.getElementById('toAcct').disabled = document.getElementById('tag').disabled = this.checked; document.getElementById('toAcct').required = !this.checked;" title="Check if Destination and Source are same" type="checkbox" checked name="sameAddr" id="sameAddr"/>
+        <label for="sameAddr">Sender and Receiver are same Account Address </label>
+        <br>
+      </div>
+      <div>
+        To Address*: <input title="Check XRP Arddress Format!" type="text" name="toAcct" id="toAcct" size="40" maxlength="35" pattern="^r(?:(?![IOl])[a-zA-Z1-9]){24,34}$" disabled/>
+        Destination Tag: <input type="number" min="0" step="1" title="Destination tag. Optional but necessary if destination address requires it" id="tag" name="tag" disabled value="0"/>
+        <br>
+      </div>
+      <hr>
+      <br height="40">
+      <div>
+        Amount in XRP: <input title="Input amount of XRP to be escrowed" type="number" id="amount" name="amount" max="1000" min="0.01" step="0.000001" required />
+        <pre>Min amount: 0.01 Max: 1000<br>You can Increase the max by changing the value in line 132</pre>
+      </div>
+      <br height="40">
+      <div style="border:2px;background-color:#CFC;">
+      <font id="Finalresults" color='color:900C3F;'></font>
+      </div>
+      <div>
+        <p style="color:red;">Warning: Confirm Current GMT/UTC Date and Time Accuracy:</p>
+        <h3 id="CurDateTime"></h3>
+        <script>
+          function calcExecDate() {
+            var execTime = new Date();
+            var rel_year= parseInt(document.getElementById('rel_year').value, 10);
+            var rel_month= parseInt(document.getElementById('rel_month').value , 10);
+            var rel_day= parseInt(document.getElementById('rel_day').value, 10);
+            var rel_hour= parseInt(document.getElementById('rel_hour').value, 10);
+            var rel_minute= parseInt(document.getElementById('rel_minute').value, 10);
+            execTime.setFullYear (execTime.getFullYear() + rel_year);
+            execTime.setMonth (execTime.getMonth() + rel_month);
+            execTime.setDate (execTime.getDate() + rel_day);
+            execTime.setHours (execTime.getHours() + rel_hour);
+            execTime.setMinutes (execTime.getMinutes() + rel_minute);
+            var execUtcTime = execTime.toUTCString();
+            document.getElementById("EscDateTime").innerHTML = execUtcTime;
+            return execTime.toISOString();
+          }
+            var clockInterval = setInterval(refreshClock, 1000);
+            function refreshClock() {
+            var d = new Date();
+            var utcTime = d.toUTCString();
+            document.getElementById("CurDateTime").innerHTML = utcTime;
+            calcExecDate();
+                }
+        </script>
+      </div>
+      <pre style="color:orange;" name="escrowDebug" id="escrowDebug"></pre>
+      <pre style="color:green;" name="escrowCreate" id="escrowCreate"></pre>
+      <div>
+        <strong>Escrow can get executed (finished) in:</strong><br><br>
+        <input title="How many years from now" type="number" id="rel_year" min="0" max="5" step="1" value="0" maxlength="1" required/> Years, and
+        <pre>Max:5 years. You can increase this limit in line 172</pre>
+        <input title="How many months from now" type="number" id="rel_month" min="0" max="11" step="1" value="0" maxlength="2" required/> Months, and
+        <pre>Max:11</pre>
+        <input title="How many days from now" type="number" id="rel_day" min="0" max="30" step="1" value="0" maxlength="2" required/> Days, and
+        <pre>Max:30</pre>
+        <input title="How many hours from now" type="number" id="rel_hour" min="0" max="23" step="1" value="0" maxlength="2" required/> Hours, and
+        <pre>Max:23</pre>
+        <input title="How many minutes from now" type="number" id="rel_minute" min="0" max="59" step="1" value="5" maxlength="2" required/> Minutes.
+        <pre>Min:5 , Max:59</pre>
+        <h2 style="color:blue;">You can execute (finish) the escrow from:</h2>
+        <h1 id="EscDateTime" ></h1>
+        <input type="submit" value="Create Escrow!" />
+      </div>
+    </form>
+  </body>
+</html>
